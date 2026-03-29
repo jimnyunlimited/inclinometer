@@ -14,9 +14,6 @@
 #include "qmi8658c.h"
 #include "i2c_bsp.h"
 
-// LV_FONT_DECLARE(lv_font_montserrat_48);
-// LV_FONT_DECLARE(lv_font_montserrat_20);
-
 // UI objects
 lv_obj_t * pitch_label;
 lv_obj_t * roll_label;
@@ -59,7 +56,6 @@ void setup() {
     Serial.println("✓ I2C Bus initialized");
 
     // 2. Initialize IMU BEFORE the display/LVGL starts!
-    // This prevents LVGL background tasks from colliding on the I2C bus
     setupIMU();
 
     // 3. Initialize Touch
@@ -78,8 +74,6 @@ void setup() {
 
 void setupIMU() {
     Serial.println("Initializing QMI8658 IMU...");
-
-    // I2C_master_Init(); <-- REMOVED FROM HERE (Moved to setup)
 
     if (!qmi8658_init()) {
         Serial.println("⚠ QMI8658 initialization failed!");
@@ -130,31 +124,41 @@ void setupDisplay() {
 void createUI() {
     lv_obj_t * screen = lv_scr_act();
     lv_obj_set_style_bg_color(screen, lv_color_hex(0x000000), 0);
-    // THIS LINE FIXES THE GARBLED TEXT (Forces the background to be solid black)
     lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0); 
 
-    // Pitch Label (Top Center)
+    // --- Pitch Label (Top Center) ---
     pitch_label = lv_label_create(screen);
-    lv_obj_set_width(pitch_label, 240); // Fixed width prevents jittering
-    lv_obj_set_style_text_align(pitch_label, LV_TEXT_ALIGN_CENTER, 0); // Center text inside the fixed width
+    lv_obj_set_width(pitch_label, 400); // WIDE enough to stop word-wrapping/dancing
+    lv_obj_set_style_text_align(pitch_label, LV_TEXT_ALIGN_CENTER, 0); 
     lv_obj_align(pitch_label, LV_ALIGN_CENTER, 0, -50);
     lv_obj_set_style_text_color(pitch_label, lv_color_hex(0x00FF00), 0);
     lv_obj_set_style_text_font(pitch_label, &lv_font_montserrat_48, 0); 
+    // FIX GARBLED TEXT: Give the label its own solid black background
+    lv_obj_set_style_bg_color(pitch_label, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(pitch_label, LV_OPA_COVER, 0);
     
-    // Roll Label (Bottom Center)
+    // --- Roll Label (Bottom Center) ---
     roll_label = lv_label_create(screen);
-    lv_obj_set_width(roll_label, 240); // Fixed width prevents jittering
-    lv_obj_set_style_text_align(roll_label, LV_TEXT_ALIGN_CENTER, 0); // Center text inside the fixed width
+    lv_obj_set_width(roll_label, 400); // WIDE enough to stop word-wrapping/dancing
+    lv_obj_set_style_text_align(roll_label, LV_TEXT_ALIGN_CENTER, 0); 
     lv_obj_align(roll_label, LV_ALIGN_CENTER, 0, 30);
     lv_obj_set_style_text_color(roll_label, lv_color_hex(0x00FF00), 0);
     lv_obj_set_style_text_font(roll_label, &lv_font_montserrat_48, 0);
+    // FIX GARBLED TEXT: Give the label its own solid black background
+    lv_obj_set_style_bg_color(roll_label, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(roll_label, LV_OPA_COVER, 0);
 
-    // Hint Label
+    // --- Hint Label ---
     lv_obj_t * hint = lv_label_create(screen);
+    lv_obj_set_width(hint, 400);
+    lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(hint, "TAP TO ZERO");
     lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -20);
     lv_obj_set_style_text_color(hint, lv_color_hex(0x888888), 0);
     lv_obj_set_style_text_font(hint, &lv_font_montserrat_20, 0);
+    // FIX GARBLED TEXT: Give the label its own solid black background
+    lv_obj_set_style_bg_color(hint, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(hint, LV_OPA_COVER, 0);
 
     Serial.println("✓ UI created");
 }
