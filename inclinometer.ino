@@ -200,6 +200,8 @@ void updateUI() {
 
     snprintf(buf, sizeof(buf), "ROLL: %.1f", display_roll);
     lv_label_set_text(roll_label, buf);
+
+    lv_obj_invalidate(lv_scr_act());
 }
 
 void handleTouch() {
