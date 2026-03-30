@@ -1,6 +1,7 @@
 /**
  * TRAILSENSE V4 - Aircraft Artificial Horizon
  * Waveshare ESP32-S3-Touch-AMOLED-1.43
+ * (Pure Math Rotation - Classic "W" Aircraft Symbol)
  */
 
 #include <Arduino.h>
@@ -8,11 +9,51 @@
 #include "FT3168.h"
 #include "qmi8658c.h"
 #include "i2c_bsp.h"
+#include <math.h>
 
 // --- UI Objects ---
-lv_obj_t * horizon_cont; 
-lv_obj_t * pitch_label;
-lv_obj_t * roll_label;
+lv_obj_t * ground_line;
+lv_point_t ground_points[2];
+
+#define LADDER_COUNT 13
+lv_obj_t * ladder_lines[LADDER_COUNT];
+lv_point_t ladder_points[LADDER_COUNT][2];
+
+lv_obj_t * ladder_labels_l[LADDER_COUNT];
+lv_obj_t * ladder_labels_r[LADDER_COUNT];
+
+// Base coordinates for the pitch ladder lines (x1, x2, y, degree)
+// 10 degrees = 60 pixels of Y movement
+struct LadderLine {
+    float x1, x2, y;
+    int degree;
+};
+
+const LadderLine ladder_base[LADDER_COUNT] = {
+    {-100, 100, 0,    0},    // Horizon
+    {-50,  50,  -60,  10},   // Sky +10
+    {-70,  70,  -120, 20},   // Sky +20
+    {-50,  50,  -180, 30},   // Sky +30
+    {-70,  70,  -240, 40},   // Sky +40
+    {-50,  50,  -300, 50},   // Sky +50
+    {-70,  70,  -360, 60},   // Sky +60
+    {-50,  50,  60,  -10},   // Ground -10
+    {-70,  70,  120, -20},   // Ground -20
+    {-50,  50,  180, -30},   // Ground -30
+    {-70,  70,  240, -40},   // Ground -40
+    {-50,  50,  300, -50},   // Ground -50
+    {-70,  70,  360, -60}    // Ground -60
+};
+
+// Points for the classic "W" aircraft symbol
+// Screen center is 233, 233
+lv_point_t aircraft_w_points[5] = {
+    {233 - 120, 233},       // Left wing tip
+    {233 - 40,  233},       // Left inner dip start
+    {233,       233 + 30},  // Center bottom dip
+    {233 + 40,  233},       // Right inner dip start
+    {233 + 120, 233}        // Right wing tip
+};
 
 // --- Attitude values ---
 float pitch = 0.0;
@@ -100,123 +141,70 @@ void setupDisplay() {
     lcd_lvgl_Init();
 }
 
-// Helper function to draw lines on the pitch ladder
-void create_ladder_line(lv_obj_t * parent, int width, int y_offset) {
-    lv_obj_t * line = lv_obj_create(parent);
-    lv_obj_set_size(line, width, 4);
-    lv_obj_align(line, LV_ALIGN_CENTER, 0, y_offset);
-    lv_obj_set_style_bg_color(line, lv_color_hex(0xFFFFFF), 0);
-    lv_obj_set_style_bg_opa(line, LV_OPA_COVER, 0); 
-    lv_obj_set_style_border_width(line, 0, 0);
-    lv_obj_set_style_pad_all(line, 0, 0);           
-    lv_obj_set_style_min_height(line, 0, 0);        
-    lv_obj_set_style_radius(line, 2, 0);
-    lv_obj_clear_flag(line, LV_OBJ_FLAG_CLICKABLE); // Don't steal clicks
-}
-
 void createUI() {
     lv_obj_t * screen = lv_scr_act();
-    lv_obj_set_style_bg_color(screen, lv_color_hex(0x000000), 0);
-    lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0); 
     
-    // CRITICAL FIX: Disable scrolling on the main screen so the horizon doesn't fly away!
+    // 1. SKY (The screen background itself is the sky)
+    lv_obj_set_style_bg_color(screen, lv_color_hex(0x2B82CB), 0); 
+    lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0); 
     lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
 
-    // 1. MASSIVE HORIZON CONTAINER
-    horizon_cont = lv_obj_create(screen);
-    lv_obj_set_size(horizon_cont, 1200, 1200);
-    lv_obj_set_pos(horizon_cont, -367, -367); 
-    lv_obj_set_style_bg_opa(horizon_cont, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(horizon_cont, 0, 0);
-    lv_obj_set_style_pad_all(horizon_cont, 0, 0);
-    lv_obj_clear_flag(horizon_cont, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_clear_flag(horizon_cont, LV_OBJ_FLAG_CLICKABLE); // Don't steal clicks
+    // 2. GROUND (A massive line with a thickness of 1200 pixels)
+    ground_line = lv_line_create(screen);
+    lv_obj_set_style_line_width(ground_line, 1200, 0);
+    lv_obj_set_style_line_color(ground_line, lv_color_hex(0x8B4513), 0);
+    lv_obj_set_style_line_rounded(ground_line, false, 0);
+    lv_obj_clear_flag(ground_line, LV_OBJ_FLAG_CLICKABLE);
 
-    // 2. SKY (Top Half)
-    lv_obj_t * sky = lv_obj_create(horizon_cont);
-    lv_obj_set_size(sky, 1200, 600);
-    lv_obj_align(sky, LV_ALIGN_TOP_MID, 0, 0);
-    lv_obj_set_style_bg_color(sky, lv_color_hex(0x2B82CB), 0); 
-    lv_obj_set_style_bg_opa(sky, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(sky, 0, 0);
-    lv_obj_set_style_pad_all(sky, 0, 0);
-    lv_obj_set_style_radius(sky, 0, 0);
-    lv_obj_clear_flag(sky, LV_OBJ_FLAG_CLICKABLE);
+    // 3. PITCH LADDER & LABELS
+    for(int i=0; i<LADDER_COUNT; i++) {
+        // Create Line
+        ladder_lines[i] = lv_line_create(screen);
+        lv_obj_set_style_line_width(ladder_lines[i], 3, 0);
+        lv_obj_set_style_line_color(ladder_lines[i], lv_color_hex(0xFFFFFF), 0);
+        lv_obj_set_style_line_rounded(ladder_lines[i], true, 0);
+        lv_obj_clear_flag(ladder_lines[i], LV_OBJ_FLAG_CLICKABLE);
 
-    // 3. GROUND (Bottom Half)
-    lv_obj_t * ground = lv_obj_create(horizon_cont);
-    lv_obj_set_size(ground, 1200, 600);
-    lv_obj_align(ground, LV_ALIGN_BOTTOM_MID, 0, 0);
-    lv_obj_set_style_bg_color(ground, lv_color_hex(0x8B4513), 0); 
-    lv_obj_set_style_bg_opa(ground, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(ground, 0, 0);
-    lv_obj_set_style_pad_all(ground, 0, 0);
-    lv_obj_set_style_radius(ground, 0, 0);
-    lv_obj_clear_flag(ground, LV_OBJ_FLAG_CLICKABLE);
+        // Create Labels (Skip the 0 degree horizon line)
+        if (ladder_base[i].degree != 0) {
+            // Left Label
+            ladder_labels_l[i] = lv_label_create(screen);
+            lv_label_set_text_fmt(ladder_labels_l[i], "%d", abs(ladder_base[i].degree));
+            lv_obj_set_style_text_color(ladder_labels_l[i], lv_color_hex(0xFFFFFF), 0);
+            lv_obj_set_style_text_font(ladder_labels_l[i], &lv_font_montserrat_24, 0); // Double size font
+            lv_obj_clear_flag(ladder_labels_l[i], LV_OBJ_FLAG_CLICKABLE);
 
-    // 4. PITCH LADDER
-    create_ladder_line(horizon_cont, 1200, 0);   
-    create_ladder_line(horizon_cont, 100, -60);  
-    create_ladder_line(horizon_cont, 140, -120); 
-    create_ladder_line(horizon_cont, 100, 60);   
-    create_ladder_line(horizon_cont, 140, 120);  
+            // Right Label
+            ladder_labels_r[i] = lv_label_create(screen);
+            lv_label_set_text_fmt(ladder_labels_r[i], "%d", abs(ladder_base[i].degree));
+            lv_obj_set_style_text_color(ladder_labels_r[i], lv_color_hex(0xFFFFFF), 0);
+            lv_obj_set_style_text_font(ladder_labels_r[i], &lv_font_montserrat_24, 0); // Double size font
+            lv_obj_clear_flag(ladder_labels_r[i], LV_OBJ_FLAG_CLICKABLE);
+        } else {
+            ladder_labels_l[i] = NULL;
+            ladder_labels_r[i] = NULL;
+        }
+    }
 
-    // 5. FIXED AIRCRAFT CROSSHAIR
+    // 4. FIXED AIRCRAFT CROSSHAIR (Classic "W" Style)
+    lv_obj_t * aircraft_w = lv_line_create(screen);
+    lv_line_set_points(aircraft_w, aircraft_w_points, 5);
+    lv_obj_set_style_line_width(aircraft_w, 6, 0);
+    lv_obj_set_style_line_color(aircraft_w, lv_color_hex(0xFFFF00), 0);
+    lv_obj_set_style_line_rounded(aircraft_w, true, 0);
+    lv_obj_clear_flag(aircraft_w, LV_OBJ_FLAG_CLICKABLE);
+
+    // Center dot for precise zero-pitch reference
     lv_obj_t * center_dot = lv_obj_create(screen);
-    lv_obj_set_size(center_dot, 12, 12);
+    lv_obj_set_size(center_dot, 10, 10);
     lv_obj_align(center_dot, LV_ALIGN_CENTER, 0, 0);
     lv_obj_set_style_bg_color(center_dot, lv_color_hex(0xFFFF00), 0); 
     lv_obj_set_style_bg_opa(center_dot, LV_OPA_COVER, 0); 
     lv_obj_set_style_border_width(center_dot, 0, 0);
-    lv_obj_set_style_pad_all(center_dot, 0, 0);
-    lv_obj_set_style_min_height(center_dot, 0, 0);
     lv_obj_set_style_radius(center_dot, LV_RADIUS_CIRCLE, 0);
     lv_obj_clear_flag(center_dot, LV_OBJ_FLAG_CLICKABLE);
 
-    lv_obj_t * left_wing = lv_obj_create(screen);
-    lv_obj_set_size(left_wing, 80, 6);
-    lv_obj_align(left_wing, LV_ALIGN_CENTER, -60, 0);
-    lv_obj_set_style_bg_color(left_wing, lv_color_hex(0xFFFF00), 0);
-    lv_obj_set_style_bg_opa(left_wing, LV_OPA_COVER, 0); 
-    lv_obj_set_style_border_width(left_wing, 0, 0);
-    lv_obj_set_style_pad_all(left_wing, 0, 0);
-    lv_obj_set_style_min_height(left_wing, 0, 0);
-    lv_obj_clear_flag(left_wing, LV_OBJ_FLAG_CLICKABLE);
-
-    lv_obj_t * right_wing = lv_obj_create(screen);
-    lv_obj_set_size(right_wing, 80, 6);
-    lv_obj_align(right_wing, LV_ALIGN_CENTER, 60, 0);
-    lv_obj_set_style_bg_color(right_wing, lv_color_hex(0xFFFF00), 0);
-    lv_obj_set_style_bg_opa(right_wing, LV_OPA_COVER, 0); 
-    lv_obj_set_style_border_width(right_wing, 0, 0);
-    lv_obj_set_style_pad_all(right_wing, 0, 0);
-    lv_obj_set_style_min_height(right_wing, 0, 0);
-    lv_obj_clear_flag(right_wing, LV_OBJ_FLAG_CLICKABLE);
-
-    // 6. TEXT LABELS
-    pitch_label = lv_label_create(screen);
-    lv_obj_set_width(pitch_label, 300);
-    lv_obj_set_style_text_align(pitch_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(pitch_label, LV_ALIGN_TOP_MID, 0, 60); 
-    lv_obj_set_style_text_color(pitch_label, lv_color_hex(0xFFFFFF), 0);
-    lv_obj_set_style_text_font(pitch_label, &lv_font_montserrat_48, 0); 
-    lv_obj_set_style_bg_color(pitch_label, lv_color_hex(0x000000), 0);
-    lv_obj_set_style_bg_opa(pitch_label, LV_OPA_50, 0); 
-    lv_obj_clear_flag(pitch_label, LV_OBJ_FLAG_CLICKABLE);
-    
-    roll_label = lv_label_create(screen);
-    lv_obj_set_width(roll_label, 300);
-    lv_obj_set_style_text_align(roll_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(roll_label, LV_ALIGN_BOTTOM_MID, 0, -60); 
-    lv_obj_set_style_text_color(roll_label, lv_color_hex(0xFFFFFF), 0);
-    lv_obj_set_style_text_font(roll_label, &lv_font_montserrat_48, 0); 
-    lv_obj_set_style_bg_color(roll_label, lv_color_hex(0x000000), 0);
-    lv_obj_set_style_bg_opa(roll_label, LV_OPA_50, 0);
-    lv_obj_clear_flag(roll_label, LV_OBJ_FLAG_CLICKABLE);
-
-    // 7. CRITICAL FIX: INVISIBLE TOUCH OVERLAY
-    // Because this is created last, it sits on top of EVERYTHING.
-    // It guarantees that tapping anywhere on the screen will trigger the zeroing function.
+    // 5. INVISIBLE TOUCH OVERLAY (For zeroing)
     lv_obj_t * touch_overlay = lv_obj_create(screen);
     lv_obj_set_size(touch_overlay, 466, 466);
     lv_obj_align(touch_overlay, LV_ALIGN_CENTER, 0, 0);
@@ -226,50 +214,110 @@ void createUI() {
     lv_obj_add_flag(touch_overlay, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(touch_overlay, screen_click_cb, LV_EVENT_CLICKED, NULL);
 
-    Serial.println("✓ UI created");
+    Serial.println("✓ UI created (Pure Math Mode)");
 }
 
 void updateAttitude() {
-    float accel[3];
-    float gyro[3];
+    float accel[3] = {0.0f, 0.0f, 0.0f};
+    float gyro[3] = {0.0f, 0.0f, 0.0f};
 
     qmi8658_read_xyz(accel, gyro);
 
     unsigned long current_time = millis();
     float dt = (current_time - last_time) / 1000.0;
-    if (dt > 0.1) dt = 0.01;
+    if (dt > 0.1 || dt <= 0.0) dt = 0.01;
     last_time = current_time;
 
+    // Full 360-degree pitch calculation
+    float accel_pitch = atan2(-accel[0], accel[2]) * 180.0 / PI;
     float accel_roll = atan2(accel[1], accel[2]) * 180.0 / PI;
-    float accel_pitch = atan2(-accel[0], sqrt(accel[1] * accel[1] + accel[2] * accel[2])) * 180.0 / PI;
 
-    roll += gyro[0] * dt;
     pitch += gyro[1] * dt;
+    roll += gyro[0] * dt;
 
-    roll = ALPHA * roll + (1.0 - ALPHA) * accel_roll;
+    // Handle 360-degree wrap-around for the complementary filter
+    if (pitch - accel_pitch > 180.0) pitch -= 360.0;
+    else if (pitch - accel_pitch < -180.0) pitch += 360.0;
+
+    if (roll - accel_roll > 180.0) roll -= 360.0;
+    else if (roll - accel_roll < -180.0) roll += 360.0;
+
     pitch = ALPHA * pitch + (1.0 - ALPHA) * accel_pitch;
+    roll = ALPHA * roll + (1.0 - ALPHA) * accel_roll;
+
+    // Keep internal values strictly within -180 to +180
+    while (pitch > 180.0) pitch -= 360.0;
+    while (pitch < -180.0) pitch += 360.0;
+    while (roll > 180.0) roll -= 360.0;
+    while (roll < -180.0) roll += 360.0;
+
+    if (isnan(pitch) || isinf(pitch)) pitch = 0.0;
+    if (isnan(roll) || isinf(roll)) roll = 0.0;
 }
 
 void updateUI() {
-    char buf[32];
+    float display_pitch = (pitch - pitch_offset);
+    
+    // DISABLE ROLL: Hardcoded to 0.0 to stop the spinning
+    float display_roll = 0.0; // (Normally: roll - roll_offset)
 
-    float display_pitch = pitch - pitch_offset;
-    float display_roll = roll - roll_offset;
+    // Normalize display pitch to handle zeroing near the 180 degree boundary
+    while (display_pitch > 180.0) display_pitch -= 360.0;
+    while (display_pitch < -180.0) display_pitch += 360.0;
 
-    // 1. Update Text
-    snprintf(buf, sizeof(buf), "PITCH: %.1f", display_pitch);
-    lv_label_set_text(pitch_label, buf);
-
-    snprintf(buf, sizeof(buf), "ROLL: %.1f", display_roll);
-    lv_label_set_text(roll_label, buf);
-
-    // 2. Move the Horizon UP/DOWN based on Pitch
     int pitch_shift = (int)(display_pitch * 6.0);
-    lv_obj_set_pos(horizon_cont, -367, -367 + pitch_shift);
+    
+    // Clamp pitch shift so we don't run out of ground/sky
+    if (pitch_shift > 400) pitch_shift = 400;
+    if (pitch_shift < -400) pitch_shift = -400;
 
-    // 3. Rotate the Horizon based on Roll
-    lv_obj_set_style_transform_angle(horizon_cont, (int)(-display_roll * 10.0), 0);
+    // Convert roll to radians for math
+    float angle_rad = -display_roll * PI / 180.0;
+    float cos_a = cos(angle_rad);
+    float sin_a = sin(angle_rad);
 
-    // 4. Force full screen redraw to prevent AMOLED garbling
-    lv_obj_invalidate(lv_scr_act()); 
+    int CX = 233; // Center of 466x466 screen
+    int CY = 233;
+
+    // 1. Update Ground Line
+    float gx1 = -1000.0;
+    float gy1 = 600.0 + pitch_shift;
+    float gx2 = 1000.0;
+    float gy2 = 600.0 + pitch_shift;
+
+    ground_points[0].x = CX + (int)(gx1 * cos_a - gy1 * sin_a);
+    ground_points[0].y = CY + (int)(gx1 * sin_a + gy1 * cos_a);
+    ground_points[1].x = CX + (int)(gx2 * cos_a - gy2 * sin_a);
+    ground_points[1].y = CY + (int)(gx2 * sin_a + gy2 * cos_a);
+
+    lv_line_set_points(ground_line, ground_points, 2);
+
+    // 2. Update Pitch Ladder & Labels
+    for(int i = 0; i < LADDER_COUNT; i++) {
+        float lx1 = ladder_base[i].x1;
+        float lx2 = ladder_base[i].x2;
+        float ly = ladder_base[i].y + pitch_shift;
+
+        // Update Line
+        ladder_points[i][0].x = CX + (int)(lx1 * cos_a - ly * sin_a);
+        ladder_points[i][0].y = CY + (int)(lx1 * sin_a + ly * cos_a);
+        ladder_points[i][1].x = CX + (int)(lx2 * cos_a - ly * sin_a);
+        ladder_points[i][1].y = CY + (int)(lx2 * sin_a + ly * cos_a);
+        lv_line_set_points(ladder_lines[i], ladder_points[i], 2);
+
+        // Update Labels
+        if (ladder_base[i].degree != 0) {
+            // Left label (offset by -30 pixels to the left of the line)
+            float llx = lx1 - 30;
+            int slx = CX + (int)(llx * cos_a - ly * sin_a);
+            int sly = CY + (int)(llx * sin_a + ly * cos_a);
+            lv_obj_set_pos(ladder_labels_l[i], slx - 15, sly - 12); // -12 centers the larger font vertically
+
+            // Right label (offset by +30 pixels to the right of the line)
+            float rlx = lx2 + 30;
+            int srx = CX + (int)(rlx * cos_a - ly * sin_a);
+            int sry = CY + (int)(rlx * sin_a + ly * cos_a);
+            lv_obj_set_pos(ladder_labels_r[i], srx - 5, sry - 12); // -12 centers the larger font vertically
+        }
+    }
 }
