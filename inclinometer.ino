@@ -1,7 +1,7 @@
 /**
  * TRAILSENSE V4 - Aircraft Artificial Horizon
  * Waveshare ESP32-S3-Touch-AMOLED-1.43
- * (Pure Math Rotation - Classic "W" Aircraft Symbol)
+ * (Pure Math Rotation - 60 Degree Hard Stop)
  */
 
 #include <Arduino.h>
@@ -265,11 +265,12 @@ void updateUI() {
     while (display_pitch > 180.0) display_pitch -= 360.0;
     while (display_pitch < -180.0) display_pitch += 360.0;
 
+    // --- CRITICAL FIX: HARD STOP AT +/- 60 DEGREES ---
+    // This physically prevents the UI from drawing past the 60 degree markers
+    if (display_pitch > 60.0) display_pitch = 60.0;
+    if (display_pitch < -60.0) display_pitch = -60.0;
+
     int pitch_shift = (int)(display_pitch * 6.0);
-    
-    // Clamp pitch shift so we don't run out of ground/sky
-    if (pitch_shift > 400) pitch_shift = 400;
-    if (pitch_shift < -400) pitch_shift = -400;
 
     // Convert roll to radians for math
     float angle_rad = -display_roll * PI / 180.0;
