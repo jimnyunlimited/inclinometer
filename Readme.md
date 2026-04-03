@@ -1,6 +1,5 @@
 # 🚙 JimnyUnlimited: Digital AMOLED Inclinometer
 
-
 ![ESP32-S3](https://img.shields.io/badge/ESP32--S3-Supported-red)
 ![LVGL](https://img.shields.io/badge/LVGL-v8.x-blue)
 ![Sensor](https://img.shields.io/badge/IMU-6--Axis-brightgreen)
@@ -63,3 +62,46 @@ graph TD
     style Vehicle fill:#e67e22,stroke:#333,stroke-width:2px,color:#fff
     style Pitch fill:#2c3e50,stroke:#333,color:#fff
     style Roll fill:#2c3e50,stroke:#333,color:#fff
+```
+
+### 2. Sensor Data Architecture
+The firmware uses a lightweight filtering system to prevent the UI from jittering due to engine vibrations or bumpy trails.
+
+```mermaid
+sequenceDiagram
+    participant IMU as 🧭 QMI8658 Sensor
+    participant ESP32 as ⚙️ ESP32-S3 Core
+    participant Filter as 🧮 Low-Pass Filter
+    participant LVGL as 🎨 LVGL UI
+    participant Screen as 📺 AMOLED Display
+
+    loop Every 10ms
+        IMU->>ESP32: Raw Accel/Gyro Data
+        ESP32->>Filter: Apply Smoothing (Anti-Jitter)
+        Filter->>ESP32: Clean Pitch & Roll Angles
+        ESP32->>LVGL: Update Gauge Needles & Text
+        LVGL->>Screen: Render Frame
+    end
+```
+
+### 3. Calibration (Zeroing the Gauge)
+Because dashboard angles differ between vehicles, you must calibrate the device after installation:
+1. Park your vehicle on a **perfectly flat, level surface**.
+2. Power on the inclinometer.
+3. **Long-press** the center of the touchscreen for 3 seconds.
+4. The screen will flash, and the current angles will be set as the new `0°` baseline.
+5. These calibration offsets are saved to the ESP32's non-volatile memory (NVS) and will persist even if the battery is disconnected.
+
+---
+
+## 🔧 Troubleshooting
+
+* **Screen is completely black on boot:** 
+  Ensure `PSRAM` is set to `OPI PSRAM` in the Arduino Tools menu. The AMOLED driver requires PSRAM to allocate the frame buffers.
+* **Angles are jittery or jumping around:**
+  Ensure the device is rigidly mounted to the dashboard. Loose mounts will amplify engine vibrations. 
+* **Pitch and Roll are swapped:**
+  Depending on how you mounted the screen (USB port facing down vs. sideways), the X and Y axes might be inverted. You can swap these in the `config.h` file by changing `#define SWAP_AXES true`.
+
+---
+*Built for the trails. Keep the rubber side down!* 🚙💨
