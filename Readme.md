@@ -1,5 +1,6 @@
 # 🚙 JimnyUnlimited: Digital AMOLED Inclinometer
 
+
 ![ESP32-S3](https://img.shields.io/badge/ESP32--S3-Supported-red)
 ![LVGL](https://img.shields.io/badge/LVGL-v8.x-blue)
 ![Sensor](https://img.shields.io/badge/IMU-6--Axis-brightgreen)
